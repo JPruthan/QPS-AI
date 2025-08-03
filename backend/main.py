@@ -5,13 +5,20 @@ from PIL import Image
 import fitz  # PyMuPDF
 import io
 import re
-import openai
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai # Import Google's library
 
-# Configure the OpenAI client to connect to your local Ollama server
-client = openai.OpenAI(
-    base_url='http://localhost:11434/v1',
-    api_key='ollama', # This can be any string, 'ollama' is common
-)
+# Load environment variables from .env file
+load_dotenv()
+
+# --- NEW: Configure the Google Gemini API ---
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise ValueError("Google API key not found. Make sure it's set in your .env file.")
+genai.configure(api_key=api_key)
+# --- END NEW ---
+
 
 app = FastAPI()
 
@@ -29,41 +36,28 @@ app.add_middleware(
 )
 
 def normalize_text_to_questions(text: str) -> list[str]:
-    """
-    Cleans and splits a block of text into a list of questions.
-    """
+    # ... (this function remains the same)
     question_start_pattern = r'\n\s*(?:\d+\.|\([a-z]\)|\b[a-z]\.)'
     match = re.search(question_start_pattern, text)
-    
     if match:
         text = text[match.start():]
-
     end_index = text.find("Question Paper Ends")
     if end_index != -1:
         text = text[:end_index]
-
     pattern = r'(?=\n\s*(?:\d+\.|\([a-z]\)|\b[a-z]\.|\(OR\)))'
     questions = re.split(pattern, text)
-    
     cleaned_questions = [q.strip() for q in questions if len(q.strip()) > 10]
-    
     return cleaned_questions
-
 
 @app.get("/health")
 def read_health():
-    """Returns a success status message."""
     return {"status": "ok"}
-    
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """
-    Accepts a file, extracts text, normalizes it into questions,
-    and returns the result as JSON.
-    """
+    # ... (this function remains the same)
     contents = await file.read()
     extracted_text = ""
-    
     try:
         if file.content_type == "application/pdf":
             pdf_document = fitz.open(stream=io.BytesIO(contents))
@@ -75,38 +69,38 @@ async def upload_file(file: UploadFile = File(...)):
             extracted_text = pytesseract.image_to_string(image)
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
-
         if not extracted_text.strip():
              raise HTTPException(status_code=400, detail="No text could be extracted.")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred during processing: {str(e)}")
-
     question_list = normalize_text_to_questions(extracted_text)
-
     return {"filename": file.filename, "questions": question_list}
 
+# --- UPDATED /solve endpoint to use Gemini ---
 @app.post("/solve")
 async def solve_questions(payload: dict):
-    """
-    Receives questions and sends the first one to the local Ollama model for an answer.
-    """
     questions = payload.get("questions", [])
     if not questions:
         raise HTTPException(status_code=400, detail="No questions provided.")
     
-    first_question = questions[0]
+    question_to_solve = questions[0]
+    
+    prompt = f"""
+    You are an expert academic assistant. Provide a clear, correct, and detailed answer for the following exam question.
+    Explain your reasoning where appropriate.
+
+    Question: "{question_to_solve}"
+
+    Answer:
+    """
     
     try:
-        completion = client.chat.completions.create(
-            # IMPORTANT: Make sure this model name matches the one you downloaded with Ollama!
-            model="gemma3:4b", 
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that provides correct, clear, and concise answers to exam questions."},
-                {"role": "user", "content": first_question}
-            ]
-        )
-        answer = completion.choices[0].message.content
-        return {"question": first_question, "answer": answer}
+        # Initialize the Gemini model
+        model = genai.GenerativeModel('gemini-1.5-flash-latest') # Using the fast and powerful Flash model
+        
+        # Generate the answer
+        response = model.generate_content(prompt)
+        
+        return {"question": question_to_solve, "answer": response.text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred with the local AI model: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An error occurred with the Google Gemini API: {str(e)}")

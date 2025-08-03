@@ -30,9 +30,8 @@ const PromptInput: React.FC<PromptInputProps> = ({ onFileUpload }) => {
       />
       <div className="prompt-form">
         <button type="button" className="icon-button" onClick={handleFileButtonClick}>
-          📎 File Upload
+          📎 File upload
         </button>
-        <div className="prompt-textarea-placeholder">Ask anything</div>
         <button type="submit" className="send-button">➤</button>
       </div>
     </div>

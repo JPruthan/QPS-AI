@@ -4,8 +4,8 @@ import './styles.css';
 const WelcomeScreen: React.FC = () => {
   return (
     <div className="welcome-container">
-      <div className="welcome-logo">🤖</div>
-      <h2>What's on your mind today?</h2>
+      {/* The greeting message from your sketch  */}
+      <h2>what's on your mind</h2>
     </div>
   );
 };
